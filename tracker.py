@@ -1,3 +1,7 @@
+# Expense Tracker Application
+# Created as part of learning project - B.Tech 2nd Year
+# Technologies: Python, Streamlit, SQLite, Pandas, Matplotlib
+
 import pandas as pd
 import matplotlib.pyplot as plt
 import streamlit as st
@@ -11,20 +15,22 @@ from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib import colors
 import xlsxwriter
 
-# Database Setup
+# Database class to handle all database operations
 class Database:
     def __init__(self, db_name='expense_tracker.db'):
         self.db_name = db_name
         self.init_database()
     
     def get_connection(self):
+        # Creating connection to SQLite database
         return sqlite3.connect(self.db_name, check_same_thread=False)
     
     def init_database(self):
+        # Initialize database tables if they don't exist
         conn = self.get_connection()
         cursor = conn.cursor()
         
-        # Users table
+        # Creating users table for authentication
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -35,7 +41,7 @@ class Database:
             )
         ''')
         
-        # Expenses table
+        # Creating expenses table to store expense records
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS expenses (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -53,9 +59,11 @@ class Database:
         conn.close()
     
     def hash_password(self, password):
+        # Using SHA-256 hashing for password security (learned in cybersecurity module)
         return hashlib.sha256(password.encode()).hexdigest()
     
     def create_user(self, username, password, email=''):
+        # Function to register new user
         conn = self.get_connection()
         cursor = conn.cursor()
         try:
@@ -65,11 +73,13 @@ class Database:
             conn.commit()
             return True, "User created successfully!"
         except sqlite3.IntegrityError:
+            # Username already exists error
             return False, "Username already exists!"
         finally:
             conn.close()
     
     def authenticate_user(self, username, password):
+        # Verify user credentials during login
         conn = self.get_connection()
         cursor = conn.cursor()
         password_hash = self.hash_password(password)
@@ -80,12 +90,14 @@ class Database:
         return user if user else None
 
 
+# Main expense tracker class
 class ExpenseTracker:
     def __init__(self, db, user_id):
         self.db = db
         self.user_id = user_id
     
     def add_expense(self, date, category, amount, description=''):
+        # Add new expense to database
         conn = self.db.get_connection()
         cursor = conn.cursor()
         cursor.execute('''
@@ -97,6 +109,7 @@ class ExpenseTracker:
         return True
     
     def get_expenses(self):
+        # Fetch all expenses for current user using pandas (easier data manipulation)
         conn = self.db.get_connection()
         query = '''
             SELECT id, date, category, amount, description, created_at
@@ -112,6 +125,7 @@ class ExpenseTracker:
         return df
     
     def get_filtered_expenses(self, filter_category=None, days=None):
+        # Filter expenses based on category and time period
         df = self.get_expenses()
         
         if not df.empty:
@@ -125,6 +139,7 @@ class ExpenseTracker:
         return df
     
     def get_category_summary(self):
+        # Get spending summary grouped by category
         df = self.get_expenses()
         if df.empty:
             return pd.DataFrame()
@@ -135,6 +150,7 @@ class ExpenseTracker:
         return summary.sort_values('Total', ascending=False)
     
     def get_monthly_data(self, month, year):
+        # Get expenses for specific month
         df = self.get_expenses()
         if df.empty:
             return pd.DataFrame()
@@ -143,6 +159,7 @@ class ExpenseTracker:
         return df[mask]
     
     def delete_expense(self, expense_id):
+        # Delete expense record
         conn = self.db.get_connection()
         cursor = conn.cursor()
         cursor.execute('DELETE FROM expenses WHERE id = ? AND user_id = ?', 
@@ -153,25 +170,26 @@ class ExpenseTracker:
         return affected > 0
 
 
+# Class for exporting reports (Excel and PDF)
 class ReportExporter:
     @staticmethod
     def export_to_excel(df, filename='expense_report.xlsx'):
-        """Export expenses to Excel file"""
+        # Export expense data to Excel file
         output = io.BytesIO()
         
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-            # Write expenses
+            # Writing expenses to first sheet
             df_export = df.copy()
             df_export['date'] = df_export['date'].dt.strftime('%Y-%m-%d')
             df_export.to_excel(writer, sheet_name='Expenses', index=False)
             
-            # Write summary
+            # Creating summary sheet
             if not df.empty:
                 summary = df.groupby('category')['amount'].sum().reset_index()
                 summary.columns = ['Category', 'Total Amount']
                 summary.to_excel(writer, sheet_name='Summary', index=False)
             
-            # Format
+            # Formatting the Excel file
             workbook = writer.book
             worksheet = writer.sheets['Expenses']
             
@@ -183,18 +201,18 @@ class ReportExporter:
     
     @staticmethod
     def export_to_pdf(df, month_name, year, total_spent, num_transactions):
-        """Export monthly report to PDF"""
+        # Export monthly report to PDF format
         output = io.BytesIO()
         doc = SimpleDocTemplate(output, pagesize=letter)
         elements = []
         styles = getSampleStyleSheet()
         
-        # Title
+        # Adding title
         title = Paragraph(f"<b>Expense Report - {month_name} {year}</b>", styles['Title'])
         elements.append(title)
         elements.append(Spacer(1, 20))
         
-        # Summary
+        # Adding summary section
         summary_text = f"""
         <b>Summary:</b><br/>
         Total Spent: ${total_spent:,.2f}<br/>
@@ -205,7 +223,7 @@ class ReportExporter:
         elements.append(summary)
         elements.append(Spacer(1, 20))
         
-        # Expenses Table
+        # Creating expense table
         if not df.empty:
             df_display = df.copy()
             df_display['date'] = df_display['date'].dt.strftime('%Y-%m-%d')
@@ -239,6 +257,7 @@ class ReportExporter:
 
 
 def login_page():
+    # Login and signup page
     st.markdown('<h1 class="main-header">🔐 Expense Tracker Login</h1>', unsafe_allow_html=True)
     
     tab1, tab2 = st.tabs(["Login", "Sign Up"])
@@ -290,9 +309,10 @@ def login_page():
 
 
 def main():
+    # Main application function
     st.set_page_config(page_title="Expense Tracker Pro", page_icon="💰", layout="wide")
     
-    # Custom CSS
+    # Custom CSS styling
     st.markdown("""
         <style>
         .main-header {
@@ -305,7 +325,7 @@ def main():
         </style>
     """, unsafe_allow_html=True)
     
-    # Initialize database
+    # Initialize database in session state
     if 'db' not in st.session_state:
         st.session_state.db = Database()
     
@@ -313,19 +333,19 @@ def main():
     if 'logged_in' not in st.session_state:
         st.session_state.logged_in = False
     
-    # Show login page if not logged in
+    # Show login page if user is not logged in
     if not st.session_state.logged_in:
         login_page()
         return
     
-    # Initialize tracker for logged-in user
+    # Initialize expense tracker for logged-in user
     if 'tracker' not in st.session_state or st.session_state.get('current_user_id') != st.session_state.user_id:
         st.session_state.tracker = ExpenseTracker(st.session_state.db, st.session_state.user_id)
         st.session_state.current_user_id = st.session_state.user_id
     
     tracker = st.session_state.tracker
     
-    # Header with logout
+    # Header section with username and logout button
     col1, col2 = st.columns([6, 1])
     with col1:
         st.markdown('<h1 class="main-header">💰 Expense Tracker Pro</h1>', unsafe_allow_html=True)
@@ -337,13 +357,14 @@ def main():
             st.session_state.username = None
             st.rerun()
     
-    # Sidebar for navigation
+    # Sidebar navigation menu
     st.sidebar.title("📊 Navigation")
     page = st.sidebar.radio("Go to", ["Dashboard", "Add Expense", "View Expenses", "Analytics", "Monthly Report", "Export Data"])
     
+    # Predefined expense categories
     categories = ['Food', 'Transport', 'Entertainment', 'Shopping', 'Bills', 'Healthcare', 'Education', 'Other']
     
-    # ============ DASHBOARD PAGE ============
+    # DASHBOARD PAGE - Shows overview of expenses
     if page == "Dashboard":
         st.header("📈 Dashboard Overview")
         
@@ -352,6 +373,7 @@ def main():
         if expenses_df.empty:
             st.info("No expenses recorded yet. Start by adding your first expense!")
         else:
+            # Calculating key metrics
             col1, col2, col3, col4 = st.columns(4)
             
             total_spent = expenses_df['amount'].sum()
@@ -360,6 +382,7 @@ def main():
             last_30_days = tracker.get_filtered_expenses(days=30)
             last_30_days_total = last_30_days['amount'].sum() if not last_30_days.empty else 0
             
+            # Displaying metrics in columns
             with col1:
                 st.metric("Total Spent", f"${total_spent:,.2f}")
             with col2:
@@ -371,6 +394,7 @@ def main():
             
             st.divider()
             
+            # Creating visualizations
             col1, col2 = st.columns(2)
             
             with col1:
@@ -394,7 +418,7 @@ def main():
                 plt.tight_layout()
                 st.pyplot(fig2)
     
-    # ============ ADD EXPENSE PAGE ============
+    # ADD EXPENSE PAGE - Form to add new expenses
     elif page == "Add Expense":
         st.header("➕ Add New Expense")
         
@@ -419,7 +443,7 @@ def main():
                 else:
                     st.error("Amount must be greater than 0")
     
-    # ============ VIEW EXPENSES PAGE ============
+    # VIEW EXPENSES PAGE - Display all expenses with filters
     elif page == "View Expenses":
         st.header("📋 View Expenses")
         
@@ -428,6 +452,7 @@ def main():
         if expenses_df.empty:
             st.info("No expenses to display.")
         else:
+            # Filter options
             col1, col2, col3 = st.columns(3)
             
             with col1:
@@ -442,12 +467,14 @@ def main():
             with col3:
                 sort_by = st.selectbox("Sort by", ['Date (Newest)', 'Date (Oldest)', 'Amount (High-Low)', 'Amount (Low-High)'])
             
+            # Apply filters
             filtered_df = tracker.get_filtered_expenses(
                 filter_category=filter_category if filter_category != 'All' else None,
                 days=days
             )
             
             if not filtered_df.empty:
+                # Apply sorting
                 if sort_by == 'Date (Newest)':
                     filtered_df = filtered_df.sort_values('date', ascending=False)
                 elif sort_by == 'Date (Oldest)':
@@ -459,6 +486,7 @@ def main():
                 
                 st.metric("Total", f"${filtered_df['amount'].sum():,.2f}")
                 
+                # Display expenses table
                 display_df = filtered_df.copy()
                 display_df['date'] = display_df['date'].dt.strftime('%Y-%m-%d')
                 display_df['amount'] = display_df['amount'].apply(lambda x: f"${x:.2f}")
@@ -470,6 +498,7 @@ def main():
                 )
                 
                 st.divider()
+                # Delete expense option
                 with st.expander("🗑️ Delete an Expense"):
                     delete_id = st.number_input("Enter expense ID to delete", min_value=1, step=1)
                     if st.button("Delete Expense"):
@@ -481,7 +510,7 @@ def main():
             else:
                 st.info("No expenses match the selected filters.")
     
-    # ============ ANALYTICS PAGE ============
+    # ANALYTICS PAGE - Detailed analysis and charts
     elif page == "Analytics":
         st.header("📊 Analytics & Insights")
         
@@ -506,6 +535,7 @@ def main():
             
             st.divider()
             
+            # Creating comparison charts
             col1, col2 = st.columns(2)
             
             with col1:
@@ -528,7 +558,7 @@ def main():
                 ax4.tick_params(axis='x', rotation=45)
                 st.pyplot(fig4)
     
-    # ============ MONTHLY REPORT PAGE ============
+    # MONTHLY REPORT PAGE - Generate monthly summaries
     elif page == "Monthly Report":
         st.header("📅 Monthly Report")
         
@@ -546,6 +576,7 @@ def main():
             if monthly_data.empty:
                 st.warning(f"No expenses found for {datetime(2000, selected_month, 1).strftime('%B')} {selected_year}")
             else:
+                # Calculate monthly statistics
                 total_spent = monthly_data['amount'].sum()
                 num_transactions = len(monthly_data)
                 avg_transaction = total_spent / num_transactions
@@ -575,7 +606,7 @@ def main():
                 top_expenses['amount'] = top_expenses['amount'].apply(lambda x: f"${x:.2f}")
                 st.dataframe(top_expenses, use_container_width=True, hide_index=True)
     
-    # ============ EXPORT DATA PAGE ============
+    # EXPORT DATA PAGE - Download reports
     elif page == "Export Data":
         st.header("📥 Export Data")
         
@@ -623,11 +654,12 @@ def main():
                     else:
                         st.warning("No data for selected month")
     
-    # Footer
+    # Footer showing summary statistics
     expenses_df = tracker.get_expenses()
     st.sidebar.divider()
     st.sidebar.info(f"📊 Total Expenses: {len(expenses_df)}\n💵 Total Amount: ${expenses_df['amount'].sum():,.2f}")
 
 
+# Run the application
 if __name__ == "__main__":
     main()
